@@ -1,0 +1,30 @@
+[
+  {
+    "id": 1,
+    "arete": "CO-001-4521",
+    "nombre": "Valentina",
+    "raza": "Holstein",
+    "lactancia": 3,
+    "peso_kg": 620,
+    "fecha_parto": "2026-03-30",
+    "estado_reproductivo": "inseminada",
+    "produccion_litros": 32,
+    "condicion_corporal": 3.0,
+    "fecha_ultima_inseminacion": "2026-05-30",
+    "toro": "Absolute"
+  },
+  {
+    "id": 2,
+    "arete": "CO-001-3892",
+    "nombre": "Esperanza",
+    "raza": "Pardo Suizo",
+    "lactancia": 2,
+    "peso_kg": 580,
+    "fecha_parto": "2026-04-10",
+    "estado_reproductivo": "vacía",
+    "produccion_litros": 24,
+    "condicion_corporal": 2.75,
+    "fecha_ultima_inseminacion": null,
+    "toro": null
+  }
+]
