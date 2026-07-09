@@ -58,4 +58,4 @@ if datos_actuales:
 else:
     st.info("Aún no hay datos guardados.")
 
-st.caption(f"Archivo JSON usado: {RUTA_JSON}")
+st.caption(f"Archivo JSON usado: {RUTA_JSON}") 

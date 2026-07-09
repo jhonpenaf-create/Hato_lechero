@@ -38,10 +38,33 @@ class StoragePersistenceTests(unittest.TestCase):
 
         storage.guardar_animales_persistidos(animales)
 
-        self.assertTrue(os.path.exists(storage.DATA_FILE))
+        data_file, _, _ = storage._storage_paths()
+        self.assertTrue(os.path.exists(data_file))
         self.assertEqual(storage.cargar_animales_persistidos(), animales)
 
-        with open(storage.DATA_FILE, "r", encoding="utf-8") as fh:
+        with open(data_file, "r", encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh), animales)
+
+    def test_json_backup_is_written(self):
+        animales = [{
+            "id": 100,
+            "arete": "EXT-002",
+            "nombre": "Mila",
+            "raza": "Jersey",
+            "lactancia": 1,
+            "peso_kg": 450.0,
+            "fecha_parto": "2026-02-10",
+            "estado_reproductivo": "inseminada",
+            "produccion_litros": 25.0,
+            "condicion_corporal": 2.75,
+            "fecha_ultima_inseminacion": "2026-05-01",
+            "toro": "Alpha",
+        }]
+
+        storage.guardar_animales_persistidos(animales)
+
+        self.assertTrue(os.path.exists(os.environ["HATO_DATA_FILE"]))
+        with open(os.environ["HATO_DATA_FILE"], "r", encoding="utf-8") as fh:
             self.assertEqual(json.load(fh), animales)
 
 

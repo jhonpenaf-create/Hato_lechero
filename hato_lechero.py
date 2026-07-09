@@ -27,6 +27,10 @@ APP_DIR = Path(__file__).resolve().parent
 if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
+DATA_FILE = os.environ.get("HATO_DATA_FILE", str(APP_DIR / "hato_memoria.json"))
+os.environ.setdefault("HATO_DATA_FILE", DATA_FILE)
+os.environ.setdefault("HATO_DB_FILE", str(APP_DIR / "hato_memoria.sqlite3"))
+
 from storage import cargar_animales_persistidos, guardar_animales_persistidos # pyright: ignore[reportMissingImports]
 
 # ═══════════════════════════════════════════════════════════════════
@@ -269,7 +273,12 @@ def fmt_dias_restantes(dias: int) -> str:
 # ═══════════════════════════════════════════════════════════════════
 # PERSISTENCIA DE DATOS
 # ═══════════════════════════════════════════════════════════════════
-DATA_FILE = os.environ.get("HATO_DATA_FILE", str(APP_DIR / "hato_memoria.json"))
+
+def _guardar_json_backup(animales: List[dict], path: str) -> None:
+    path_obj = Path(path)
+    path_obj.parent.mkdir(parents=True, exist_ok=True)
+    with path_obj.open("w", encoding="utf-8") as fh:
+        json.dump(animales, fh, indent=2, ensure_ascii=False)
 
 
 def cargar_datos() -> List[Animal]:
@@ -280,13 +289,25 @@ def cargar_datos() -> List[Animal]:
             return [Animal(**animal_dict) for animal_dict in datos]
     except Exception as e:
         st.warning(f"Error al cargar datos persistidos: {e}. Usando datos de ejemplo.")
+
+    if Path(DATA_FILE).exists():
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as fh:
+                datos_json = json.load(fh)
+                if isinstance(datos_json, list) and datos_json:
+                    return [Animal(**animal_dict) for animal_dict in datos_json]
+        except Exception as e:
+            st.warning(f"Error al leer el respaldo JSON: {e}")
+
     return datos_ejemplo()
 
 
 def guardar_datos(animales: List[Animal]):
     """Guarda los animales en almacenamiento persistente (JSON y SQLite)."""
     try:
-        guardar_animales_persistidos([asdict(a) for a in animales])
+        payload = [asdict(a) for a in animales]
+        guardar_animales_persistidos(payload)
+        _guardar_json_backup(payload, DATA_FILE)
     except Exception as e:
         st.error(f"Error al guardar datos: {e}")
 

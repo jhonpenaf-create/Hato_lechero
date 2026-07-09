@@ -91,39 +91,56 @@ def cargar_animales_persistidos() -> List[Dict[str, Any]]:
     return []
 
 
+def _guardar_json(animales: List[Dict[str, Any]], data_file: str) -> None:
+    temp_path = f"{data_file}.tmp"
+    with open(temp_path, "w", encoding="utf-8") as fh:
+        json.dump(animales, fh, indent=2, ensure_ascii=False)
+    os.replace(temp_path, data_file)
+
+
 def guardar_animales_persistidos(animales: List[Dict[str, Any]]) -> None:
     _ensure_storage_dir()
 
-    conn = _init_db()
-    conn.execute("DELETE FROM animales")
+    db_error = None
+    try:
+        conn = _init_db()
+        conn.execute("DELETE FROM animales")
 
-    for animal in animales:
-        conn.execute(
-            """
-            INSERT INTO animales (
-                id, arete, nombre, raza, lactancia, peso_kg, fecha_parto, estado_reproductivo,
-                produccion_litros, condicion_corporal, fecha_ultima_inseminacion, toro
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                animal.get("id"),
-                animal.get("arete"),
-                animal.get("nombre"),
-                animal.get("raza"),
-                animal.get("lactancia"),
-                animal.get("peso_kg"),
-                animal.get("fecha_parto"),
-                animal.get("estado_reproductivo"),
-                animal.get("produccion_litros"),
-                animal.get("condicion_corporal"),
-                animal.get("fecha_ultima_inseminacion"),
-                animal.get("toro"),
-            ),
-        )
+        for animal in animales:
+            conn.execute(
+                """
+                INSERT INTO animales (
+                    id, arete, nombre, raza, lactancia, peso_kg, fecha_parto, estado_reproductivo,
+                    produccion_litros, condicion_corporal, fecha_ultima_inseminacion, toro
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    animal.get("id"),
+                    animal.get("arete"),
+                    animal.get("nombre"),
+                    animal.get("raza"),
+                    animal.get("lactancia"),
+                    animal.get("peso_kg"),
+                    animal.get("fecha_parto"),
+                    animal.get("estado_reproductivo"),
+                    animal.get("produccion_litros"),
+                    animal.get("condicion_corporal"),
+                    animal.get("fecha_ultima_inseminacion"),
+                    animal.get("toro"),
+                ),
+            )
 
-    conn.commit()
-    conn.close()
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        db_error = exc
 
     data_file, _, _ = _storage_paths()
-    with open(data_file, "w", encoding="utf-8") as fh:
-        json.dump(animales, fh, indent=2, ensure_ascii=False)
+    try:
+        _guardar_json(animales, data_file)
+    except Exception as exc:
+        if db_error is None:
+            raise exc
+
+    if db_error is not None:
+        return
