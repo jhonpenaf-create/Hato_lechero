@@ -20,6 +20,56 @@ def _ensure_storage_dir() -> None:
     os.makedirs(data_dir, exist_ok=True)
 
 
+def _cargar_desde_db() -> List[Dict[str, Any]]:
+    _, db_file, _ = _storage_paths()
+    if not os.path.exists(db_file):
+        return []
+
+    try:
+        conn = _init_db()
+        rows = conn.execute(
+            "SELECT id, arete, nombre, raza, lactancia, peso_kg, fecha_parto, estado_reproductivo, produccion_litros, condicion_corporal, fecha_ultima_inseminacion, toro FROM animales ORDER BY id"
+        ).fetchall()
+        conn.close()
+        if rows:
+            return [
+                {
+                    "id": row[0],
+                    "arete": row[1],
+                    "nombre": row[2],
+                    "raza": row[3],
+                    "lactancia": row[4],
+                    "peso_kg": row[5],
+                    "fecha_parto": row[6],
+                    "estado_reproductivo": row[7],
+                    "produccion_litros": row[8],
+                    "condicion_corporal": row[9],
+                    "fecha_ultima_inseminacion": row[10],
+                    "toro": row[11],
+                }
+                for row in rows
+            ]
+    except Exception:
+        return []
+
+    return []
+
+
+def _cargar_desde_json(data_file: str) -> List[Dict[str, Any]]:
+    if not os.path.exists(data_file):
+        return []
+
+    try:
+        with open(data_file, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+            if isinstance(data, list):
+                return data
+    except Exception:
+        return []
+
+    return []
+
+
 def _init_db() -> sqlite3.Connection:
     _ensure_storage_dir()
     _, db_file, _ = _storage_paths()
@@ -48,47 +98,61 @@ def _init_db() -> sqlite3.Connection:
 
 def cargar_animales_persistidos() -> List[Dict[str, Any]]:
     _ensure_storage_dir()
+    data = _cargar_desde_db()
+    if data:
+        return data
 
-    _, db_file, _ = _storage_paths()
-    if os.path.exists(db_file):
-        try:
-            conn = _init_db()
-            rows = conn.execute(
-                "SELECT id, arete, nombre, raza, lactancia, peso_kg, fecha_parto, estado_reproductivo, produccion_litros, condicion_corporal, fecha_ultima_inseminacion, toro FROM animales ORDER BY id"
-            ).fetchall()
-            conn.close()
-            if rows:
-                return [
-                    {
-                        "id": row[0],
-                        "arete": row[1],
-                        "nombre": row[2],
-                        "raza": row[3],
-                        "lactancia": row[4],
-                        "peso_kg": row[5],
-                        "fecha_parto": row[6],
-                        "estado_reproductivo": row[7],
-                        "produccion_litros": row[8],
-                        "condicion_corporal": row[9],
-                        "fecha_ultima_inseminacion": row[10],
-                        "toro": row[11],
-                    }
-                    for row in rows
-                ]
-        except Exception:
-            pass
-
+    # Si la DB está vacía, intentar cargar respaldo JSON y poblar la DB
     data_file, _, _ = _storage_paths()
-    if os.path.exists(data_file):
+    json_data = _cargar_desde_json(data_file)
+    if json_data:
         try:
-            with open(data_file, "r", encoding="utf-8") as fh:
-                data = json.load(fh)
-                if isinstance(data, list):
-                    return data
+            _import_json_to_db(json_data)
         except Exception:
-            pass
+            # si falla la importación, simplemente retornar el JSON
+            return json_data
+        return json_data
 
     return []
+
+
+def _import_json_to_db(animales: List[Dict[str, Any]]) -> None:
+    """Escribe una lista de animales directamente en la base SQLite.
+    Usa INSERT OR REPLACE para evitar conflictos por `arete`.
+    Esta función no llama a `guardar_animales_persistidos` para evitar recursión.
+    """
+    if not animales:
+        return
+
+    conn = _init_db()
+    try:
+        conn.execute("DELETE FROM animales")
+        for animal in animales:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO animales (
+                    id, arete, nombre, raza, lactancia, peso_kg, fecha_parto, estado_reproductivo,
+                    produccion_litros, condicion_corporal, fecha_ultima_inseminacion, toro
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    animal.get("id"),
+                    animal.get("arete"),
+                    animal.get("nombre"),
+                    animal.get("raza"),
+                    animal.get("lactancia"),
+                    animal.get("peso_kg"),
+                    animal.get("fecha_parto"),
+                    animal.get("estado_reproductivo"),
+                    animal.get("produccion_litros"),
+                    animal.get("condicion_corporal"),
+                    animal.get("fecha_ultima_inseminacion"),
+                    animal.get("toro"),
+                ),
+            )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _guardar_json(animales: List[Dict[str, Any]], data_file: str) -> None:
@@ -100,13 +164,35 @@ def _guardar_json(animales: List[Dict[str, Any]], data_file: str) -> None:
 
 def guardar_animales_persistidos(animales: List[Dict[str, Any]]) -> None:
     _ensure_storage_dir()
+    # Cargar existentes y fusionar con los entrantes para evitar
+    # eliminar datos cuando el llamador envía solo los nuevos
+    existing = cargar_animales_persistidos()
+
+    # Si no hay animales entrantes y ya hay existentes, no sobrescribimos
+    if not animales:
+        if existing:
+            return
+        # no hay nada que guardar
+        return
+
+    # Fusionar por clave única preferida `arete`, si no existe usar `id`
+    merged_map: Dict[str, Dict[str, Any]] = {}
+    for a in existing:
+        key = a.get("arete") or str(a.get("id"))
+        merged_map[key] = a
+
+    for a in animales:
+        key = a.get("arete") or str(a.get("id"))
+        merged_map[key] = a
+
+    merged = list(merged_map.values())
 
     db_error = None
     try:
         conn = _init_db()
         conn.execute("DELETE FROM animales")
 
-        for animal in animales:
+        for animal in merged:
             conn.execute(
                 """
                 INSERT INTO animales (
@@ -137,7 +223,7 @@ def guardar_animales_persistidos(animales: List[Dict[str, Any]]) -> None:
 
     data_file, _, _ = _storage_paths()
     try:
-        _guardar_json(animales, data_file)
+        _guardar_json(merged, data_file)
     except Exception as exc:
         if db_error is None:
             raise exc

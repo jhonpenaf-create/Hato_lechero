@@ -67,6 +67,27 @@ class StoragePersistenceTests(unittest.TestCase):
         with open(os.environ["HATO_DATA_FILE"], "r", encoding="utf-8") as fh:
             self.assertEqual(json.load(fh), animales)
 
+    def test_empty_payload_does_not_erase_existing_data(self):
+        animales = [{
+            "id": 101,
+            "arete": "EXT-003",
+            "nombre": "Nina",
+            "raza": "Holstein",
+            "lactancia": 3,
+            "peso_kg": 590.0,
+            "fecha_parto": "2026-03-20",
+            "estado_reproductivo": "vacía",
+            "produccion_litros": 29.0,
+            "condicion_corporal": 3.25,
+            "fecha_ultima_inseminacion": None,
+            "toro": None,
+        }]
+
+        storage.guardar_animales_persistidos(animales)
+        storage.guardar_animales_persistidos([])
+
+        self.assertEqual(storage.cargar_animales_persistidos(), animales)
+
 
 if __name__ == "__main__":
     unittest.main()
