@@ -286,6 +286,8 @@ def guardar_datos(animales: List[Animal]):
     """Guarda la lista completa de animales del usuario local en SQLite."""
     payload = [asdict(a) for a in animales]
     guardar_animales_persistidos(payload)
+    st.session_state.pop("respaldo_sqlite", None)
+    st.session_state.pop("respaldo_sqlite_nombre", None)
 
 def datos_ejemplo() -> List[Animal]:
     hoy = date.today()
