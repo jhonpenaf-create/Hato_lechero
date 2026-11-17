@@ -14,11 +14,9 @@ import streamlit as st # pyright: ignore[reportMissingImports]
 import pandas as pd # pyright: ignore[reportMissingModuleSource]
 import plotly.graph_objects as go # pyright: ignore[reportMissingImports]
 import plotly.express as px # pyright: ignore[reportMissingImports]
-from datetime import date, timedelta, datetime
-from dataclasses import dataclass, field, asdict
+from datetime import date, timedelta
+from dataclasses import dataclass, asdict
 from typing import Optional, List
-import json
-import copy
 import os
 import sys
 from pathlib import Path
@@ -30,8 +28,12 @@ if str(APP_DIR) not in sys.path:
 DATA_FILE = os.environ.get("HATO_DATA_FILE", str(APP_DIR / "hato_memoria.json"))
 os.environ.setdefault("HATO_DATA_FILE", DATA_FILE)
 os.environ.setdefault("HATO_DB_FILE", str(APP_DIR / "hato_memoria.sqlite3"))
+DB_FILE = os.environ["HATO_DB_FILE"]
 
-from storage import cargar_animales_persistidos, guardar_animales_persistidos # pyright: ignore[reportMissingImports]
+from storage import ( # pyright: ignore[reportMissingImports]
+    cargar_animales_persistidos,
+    guardar_animales_persistidos,
+)
 
 # ═══════════════════════════════════════════════════════════════════
 # PARÁMETROS REPRODUCTIVOS DE ALTA EFICIENCIA
@@ -213,11 +215,12 @@ def generar_alertas(animal: Animal) -> List[Alerta]:
     # Ventana de repetición de celo
     if fechas.ventana_celo and animal.fecha_inseminacion_date():
         insem = animal.fecha_inseminacion_date()
-        for fecha_celo in fechas.ventana_celo:
-            d = (fecha_celo - hoy).days
-            if 0 <= d <= 2:
-                dia_num = (fecha_celo - insem).days
-                add("celo", f"Ventana repetición de celo (día {dia_num} post-IA)", fecha_celo, "alta")
+        if insem:
+            for fecha_celo in fechas.ventana_celo:
+                d = (fecha_celo - hoy).days
+                if 0 <= d <= 2:
+                    dia_num = (fecha_celo - insem).days
+                    add("celo", f"Ventana repetición de celo (día {dia_num} post-IA)", fecha_celo, "alta")
 
     # Secado
     if fechas.secado_estimado:
@@ -274,42 +277,15 @@ def fmt_dias_restantes(dias: int) -> str:
 # PERSISTENCIA DE DATOS
 # ═══════════════════════════════════════════════════════════════════
 
-def _guardar_json_backup(animales: List[dict], path: str) -> None:
-    path_obj = Path(path)
-    path_obj.parent.mkdir(parents=True, exist_ok=True)
-    with path_obj.open("w", encoding="utf-8") as fh:
-        json.dump(animales, fh, indent=2, ensure_ascii=False)
-
-
 def cargar_datos() -> List[Animal]:
-    """Carga los datos desde el almacenamiento persistente, o retorna datos de ejemplo si no existe."""
-    try:
-        datos = cargar_animales_persistidos()
-        if datos:
-            return [Animal(**animal_dict) for animal_dict in datos]
-    except Exception as e:
-        st.warning(f"Error al cargar datos persistidos: {e}. Usando datos de ejemplo.")
-
-    if Path(DATA_FILE).exists():
-        try:
-            with open(DATA_FILE, "r", encoding="utf-8") as fh:
-                datos_json = json.load(fh)
-                if isinstance(datos_json, list) and datos_json:
-                    return [Animal(**animal_dict) for animal_dict in datos_json]
-        except Exception as e:
-            st.warning(f"Error al leer el respaldo JSON: {e}")
-
-    return datos_ejemplo()
-
+    """Carga los animales del usuario local desde la base SQLite."""
+    datos = cargar_animales_persistidos()
+    return [Animal(**animal_dict) for animal_dict in datos]
 
 def guardar_datos(animales: List[Animal]):
-    """Guarda los animales en almacenamiento persistente (JSON y SQLite)."""
-    try:
-        payload = [asdict(a) for a in animales]
-        guardar_animales_persistidos(payload)
-        _guardar_json_backup(payload, DATA_FILE)
-    except Exception as e:
-        st.error(f"Error al guardar datos: {e}")
+    """Guarda la lista completa de animales del usuario local en SQLite."""
+    payload = [asdict(a) for a in animales]
+    guardar_animales_persistidos(payload)
 
 def datos_ejemplo() -> List[Animal]:
     hoy = date.today()
@@ -458,15 +434,18 @@ def guardar_animal(animal: Animal):
     ids = [a.id for a in animales]
     if animal.id in ids:
         idx = ids.index(animal.id)
-        st.session_state.animales[idx] = animal
+        animales = animales.copy()
+        animales[idx] = animal
     else:
-        st.session_state.animales.append(animal)
-    guardar_datos(st.session_state.animales)
+        animales = [*animales, animal]
+    guardar_datos(animales)
+    st.session_state.animales = animales
 
 
 def eliminar_animal(aid: int):
-    st.session_state.animales = [a for a in get_animales() if a.id != aid]
-    guardar_datos(st.session_state.animales)
+    animales = [a for a in get_animales() if a.id != aid]
+    guardar_datos(animales)
+    st.session_state.animales = animales
 
 
 def next_id() -> int:
@@ -480,6 +459,8 @@ def next_id() -> int:
 with st.sidebar:
     st.markdown("## 🐄 HatoGest Pro")
     st.markdown("*Sistema de Gestión Lechera*")
+    st.caption("👤 Usuario activo: Usuario local")
+    st.caption(f"💾 Base de datos SQLite local: {DB_FILE}")
     st.divider()
 
     animales = get_animales()
@@ -544,6 +525,9 @@ def render_estado_badge(estado: str) -> str:
 def vista_dashboard():
     st.title("📊 Dashboard General")
     animales = get_animales()
+    if not animales:
+        st.info("Aún no hay animales registrados. Agrégalos desde la vista Gestión del Hato.")
+        return
 
     # ── Estadísticas principales ────────────────────────────────
     col1, col2, col3, col4, col5, col6 = st.columns(6)
@@ -1123,4 +1107,3 @@ elif vista == "🔍 Detalle Animal":
     vista_detalle()
 elif vista == "⚙️ Parámetros":
     vista_parametros()
-
